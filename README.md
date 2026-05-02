@@ -80,6 +80,26 @@ kaskad/
 - Веб-интерфейс через basic auth, рекомендуется ставить за HTTPS reverse-proxy (nginx/caddy)
 - Telegram-бот принимает команды только от заранее заданного `TG_CHAT_ID`
 
+
+## Связанные проекты
+
+- 🔧 **[keenetic-unified](https://github.com/andrey271192/keenetic-unified)** — мониторинг роутеров Keenetic с TG-ботом и веб-дашбордом
+- 🌐 **[keenetic_ssh-web](https://github.com/andrey271192/keenetic_ssh-web)** — веб-панель shell-команд на самом роутере
+- 🛣 **[keenetic-dns-routes](https://github.com/andrey271192/keenetic-dns-routes)** — DNS-маршрутизация без HydraRoute Neo
+
+---
+
+## Поддержка проекта
+
+Если **Kaskad** оказался полезен — поддержи разработку:
+
+- ⭐ **GitHub:** [andrey271192/kaskad](https://github.com/andrey271192/kaskad) — поставь звезду
+- 💖 **Boosty:** [boosty.to/andrey27/donate](https://boosty.to/andrey27/donate)
+- 💳 **Ozon Bank (СБП):** [перевод](https://finance.ozon.ru/apps/sbp/ozonbankpay/019dc200-2a5d-7931-a619-782d285f6798)
+- ✉️ **Telegram:** [@Iot_andrey](https://t.me/Iot_andrey) — вопросы, предложения, баги
+
+---
+
 ## Лицензия
 
 MIT

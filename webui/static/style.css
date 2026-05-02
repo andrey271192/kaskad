@@ -111,3 +111,12 @@ footer {
   text-align: center;
 }
 footer a { color: #58a6ff; text-decoration: none; }
+
+
+footer .foot-row {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  align-items: center; justify-content: center;
+  margin: 4px 0;
+}
+footer .foot-row.muted { color: #6e7681; font-size: 11px; margin-top: 8px; }
+footer a { margin: 0 2px; }
