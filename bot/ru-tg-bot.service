@@ -1,0 +1,18 @@
+[Unit]
+Description=RU tunnel Telegram bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/wireguard/notify.env
+Environment=LOCAL_HOST=ams1
+Environment=LOCAL_IP=127.0.0.1
+ExecStart=/usr/bin/python3 /usr/local/bin/ru-tg-bot.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

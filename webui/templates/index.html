@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kaskad</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script defer src="https://unpkg.com/alpinejs@3.13.0/dist/cdn.min.js"></script>
+</head>
+<body x-data="kaskad()" x-init="load()">
+  <header>
+    <h1>Каскад</h1>
+    <button @click="load()" :disabled="loading">⟳ Обновить</button>
+    <span class="status" x-show="loading">загружаю…</span>
+    <span class="status err" x-show="error" x-text="error"></span>
+  </header>
+
+  <!-- Status: ам. серверы и куда ходят -->
+  <section>
+    <h2>Состояние туннелей</h2>
+    <table>
+      <thead><tr><th>Ам. сервер</th><th>Tunnel IP</th><th>Через RU</th><th>Handshake</th><th>State</th></tr></thead>
+      <tbody>
+        <template x-for="s in state.status" :key="s.id">
+          <tr :class="s.state !== 'ok' ? 'bad' : ''">
+            <td><strong x-text="s.id"></strong> <span class="muted" x-text="s.host"></span></td>
+            <td x-text="s.tunnel_ip"></td>
+            <td x-text="s.label || '-'"></td>
+            <td x-text="s.handshake_age != null ? fmtAge(s.handshake_age) : '—'"></td>
+            <td x-text="s.state"></td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+    <div class="actions">
+      Force переключить все на:
+      <template x-for="ru in state.ru_servers" :key="ru.id">
+        <button @click="useServer(ru.id)" x-text="ru.id"></button>
+      </template>
+    </div>
+  </section>
+
+  <!-- RU-серверы -->
+  <section>
+    <h2>RU-серверы (по приоритету)</h2>
+    <table>
+      <thead><tr><th>Prio</th><th>ID</th><th>Label</th><th>Endpoint</th><th>Probe</th><th>SSH</th><th></th></tr></thead>
+      <tbody>
+        <template x-for="ru in state.ru_servers" :key="ru.id">
+          <tr>
+            <td x-text="ru.priority"></td>
+            <td><strong x-text="ru.id"></strong></td>
+            <td x-text="ru.label"></td>
+            <td x-text="ru.endpoint"></td>
+            <td x-text="'TCP ' + ru.probe_port"></td>
+            <td class="muted" x-text="(ru.ssh_user||'?') + '@' + ru.host + ':' + (ru.ssh_port||'?')"></td>
+            <td><button class="danger" @click="removeServer(ru.id)">удалить</button></td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+    <details>
+      <summary>+ добавить RU-сервер</summary>
+      <form @submit.prevent="addServer()">
+        <label>host <input x-model="forms.ru.host" placeholder="1.2.3.4 или domain.ru" required></label>
+        <label>id <input x-model="forms.ru.id" placeholder="newru" required></label>
+        <label>SSH user <input x-model="forms.ru.user" value="root"></label>
+        <label>SSH port <input type="number" x-model.number="forms.ru.ssh_port" value="22"></label>
+        <label>label <input x-model="forms.ru.label" placeholder="my-ru.example"></label>
+        <label>priority <input type="number" x-model.number="forms.ru.priority" value="3"></label>
+        <label>listen_port <input type="number" x-model.number="forms.ru.listen_port" value="1939"></label>
+        <label>probe_port <input type="number" x-model.number="forms.ru.probe_port" placeholder="по умолч. ssh_port"></label>
+        <label>SSH password <input type="password" x-model="forms.ru.password" placeholder="оставь пустым если ключ бота уже там"></label>
+        <button type="submit" :disabled="loading">добавить</button>
+      </form>
+      <p class="muted">Если оставишь пароль пустым — на новом RU должен лежать SSH-ключ бота: <code>cat /root/.ssh/id_ed25519.pub</code></p>
+    </details>
+  </section>
+
+  <!-- Ам. серверы -->
+  <section>
+    <h2>Ам. серверы</h2>
+    <table>
+      <thead><tr><th>ID</th><th>Host</th><th>SSH</th><th>Tunnel</th><th>Pubkey</th><th></th></tr></thead>
+      <tbody>
+        <template x-for="a in state.ams_servers" :key="a.id">
+          <tr>
+            <td><strong x-text="a.id"></strong> <span class="muted" x-show="a.is_local">(local)</span></td>
+            <td x-text="a.host"></td>
+            <td x-text="a.ssh_port"></td>
+            <td x-text="a.tunnel_ip"></td>
+            <td class="muted mono" x-text="a.pubkey.slice(0, 20) + '...'"></td>
+            <td><button class="danger" @click="removeAms(a.id)" :disabled="a.is_local">удалить</button></td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+    <details>
+      <summary>+ добавить ам. сервер</summary>
+      <form @submit.prevent="addAms()">
+        <label>host <input x-model="forms.ams.host" required></label>
+        <label>id <input x-model="forms.ams.id" required></label>
+        <label>SSH user <input x-model="forms.ams.user" value="root"></label>
+        <label>SSH port <input type="number" x-model.number="forms.ams.ssh_port" value="22"></label>
+        <label>tunnel_ip <input x-model="forms.ams.tunnel_ip" placeholder="auto = следующий свободный"></label>
+        <label>xray_iface <input x-model="forms.ams.xray_iface" value="amn0"></label>
+        <label>SSH password <input type="password" x-model="forms.ams.password"></label>
+        <button type="submit" :disabled="loading">добавить</button>
+      </form>
+    </details>
+  </section>
+
+  <!-- Домены -->
+  <section>
+    <h2>Домены (<span x-text="Object.keys(state.domains||{}).length"></span>)</h2>
+    <div class="actions">
+      <button @click="refreshDomains()" :disabled="loading">🔄 Refresh DNS</button>
+      <input type="text" x-model="domainFilter" placeholder="фильтр…" style="flex:1">
+    </div>
+    <table>
+      <thead><tr><th>Домен</th><th>IP</th><th></th></tr></thead>
+      <tbody>
+        <template x-for="(cnt, dom) in filteredDomains()" :key="dom">
+          <tr>
+            <td x-text="dom"></td>
+            <td x-text="cnt + ' IP'"></td>
+            <td><button class="danger" @click="removeDomain(dom)">удалить</button></td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+    <details>
+      <summary>+ добавить домены</summary>
+      <form @submit.prevent="addDomains()">
+        <textarea x-model="forms.domains" rows="6" placeholder="vk.com&#10;ozon.ru&#10;gosuslugi.ru" required></textarea>
+        <button type="submit" :disabled="loading">добавить</button>
+      </form>
+      <p class="muted">Бот резолвит каждый домен и кладёт IP в маршруты на всех ам. серверах. Cron каждые 6ч обновляет резолвы.</p>
+    </details>
+  </section>
+
+  <!-- IP / CIDR -->
+  <section>
+    <h2>Доп. IP/CIDR (<span x-text="(state.extra_ips||[]).length"></span>)</h2>
+    <div class="actions">
+      <input type="text" x-model="ipFilter" placeholder="фильтр…" style="flex:1">
+      <button class="danger" @click="clearIps()" :disabled="loading">🧹 Очистить все</button>
+    </div>
+    <ul class="ip-list">
+      <template x-for="ip in filteredIps()" :key="ip">
+        <li>
+          <span x-text="ip"></span>
+          <button class="danger sm" @click="removeIp(ip)">×</button>
+        </li>
+      </template>
+    </ul>
+    <details>
+      <summary>+ добавить IP/CIDR</summary>
+      <form @submit.prevent="addIps()">
+        <textarea x-model="forms.ips" rows="5" placeholder="5.45.192.1/32&#10;1.2.3.0/24" required></textarea>
+        <button type="submit" :disabled="loading">добавить</button>
+      </form>
+    </details>
+  </section>
+
+  <!-- Базовые подсети -->
+  <section>
+    <h2>Базовые подсети (read-only)</h2>
+    <p class="muted">Эти подсети живут в <code>/etc/wireguard/ru-base.aips</code>, прописаны при первоначальной установке. Дополнительные адреса/домены идут отдельным списком.</p>
+    <ul class="ip-list compact">
+      <template x-for="ip in state.base_ips" :key="ip"><li x-text="ip"></li></template>
+    </ul>
+  </section>
+
+  <footer>
+    <span>Kaskad WebUI · <a href="https://github.com/andrey271192/kaskad" target="_blank">GitHub</a></span>
+  </footer>
+
+  <div class="toast" x-show="toast" x-text="toast"></div>
+
+  <script>
+    function kaskad() {
+      return {
+        state: {ru_servers:[], ams_servers:[], status:[], extra_ips:[], base_ips:[], domains:{}},
+        loading: false, error: '', toast: '',
+        domainFilter: '', ipFilter: '',
+        forms: {
+          ru: {user:'root', ssh_port:22, listen_port:1939, priority:3},
+          ams: {user:'root', ssh_port:22, xray_iface:'amn0'},
+          domains: '', ips: '',
+        },
+
+        async req(method, url, body) {
+          this.loading = true; this.error = '';
+          try {
+            const r = await fetch(url, {
+              method, headers: {'Content-Type':'application/json'},
+              body: body ? JSON.stringify(body) : undefined
+            });
+            const j = await r.json().catch(()=>({}));
+            if (!r.ok) throw new Error(j.error || r.statusText);
+            return j;
+          } catch (e) { this.error = e.message; throw e; }
+          finally { this.loading = false; }
+        },
+        flash(msg) { this.toast = msg; setTimeout(()=>this.toast='', 3500); },
+        async load() { try { this.state = await this.req('GET','/api/state'); } catch{} },
+
+        fmtAge(s) {
+          if (s == null) return '—';
+          if (s >= 86400) return Math.floor(s/86400)+'д';
+          if (s >= 3600)  return Math.floor(s/3600)+'ч';
+          if (s >= 60)    return Math.floor(s/60)+'м';
+          return s+'с';
+        },
+
+        filteredDomains() {
+          const f = this.domainFilter.toLowerCase();
+          const o = {};
+          for (const k of Object.keys(this.state.domains||{}).sort())
+            if (!f || k.includes(f)) o[k] = this.state.domains[k];
+          return o;
+        },
+        filteredIps() {
+          const f = this.ipFilter.toLowerCase();
+          return (this.state.extra_ips||[]).filter(ip => !f || ip.includes(f));
+        },
+
+        async useServer(id) {
+          if (!confirm(`Переключить все ам. на ${id}?`)) return;
+          await this.req('POST','/api/use',{id}); this.flash('переключено'); this.load();
+        },
+        async addServer() {
+          await this.req('POST','/api/server', this.forms.ru);
+          this.flash('RU добавлен'); this.forms.ru = {user:'root', ssh_port:22, listen_port:1939, priority:3};
+          this.load();
+        },
+        async removeServer(id) {
+          if (!confirm(`Удалить RU '${id}'?`)) return;
+          await this.req('DELETE',`/api/server/${id}`); this.flash('удалено'); this.load();
+        },
+        async addAms() {
+          await this.req('POST','/api/ams', this.forms.ams);
+          this.flash('Ам. добавлен'); this.forms.ams = {user:'root', ssh_port:22, xray_iface:'amn0'};
+          this.load();
+        },
+        async removeAms(id) {
+          if (!confirm(`Удалить ам. '${id}'? Snimet peer на всех RU.`)) return;
+          await this.req('DELETE',`/api/ams/${id}`); this.flash('удалено'); this.load();
+        },
+        async addDomains() {
+          const doms = this.forms.domains.split(/[\s,]+/).map(s=>s.trim()).filter(Boolean);
+          await this.req('POST','/api/domains',{domains:doms});
+          this.flash(`добавлено ${doms.length}`); this.forms.domains=''; this.load();
+        },
+        async removeDomain(dom) {
+          if (!confirm(`Убрать ${dom}?`)) return;
+          await this.req('DELETE','/api/domains',{domains:[dom]}); this.flash('убран'); this.load();
+        },
+        async refreshDomains() {
+          await this.req('POST','/api/domains/refresh',{}); this.flash('refresh запущен'); this.load();
+        },
+        async addIps() {
+          await this.req('POST','/api/ips',{ips: this.forms.ips});
+          this.flash('добавлено'); this.forms.ips=''; this.load();
+        },
+        async removeIp(ip) {
+          await this.req('DELETE','/api/ips',{ips:[ip]}); this.flash('убран'); this.load();
+        },
+        async clearIps() {
+          if (!confirm('Очистить ВСЕ доп. IP? (домены тоже потеряют свои IP до следующего refresh)')) return;
+          await this.req('POST','/api/ips/clear',{}); this.flash('очищено'); this.load();
+        },
+      };
+    }
+  </script>
+</body>
+</html>

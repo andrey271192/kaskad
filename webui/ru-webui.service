@@ -1,0 +1,17 @@
+[Unit]
+Description=Kaskad Web UI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/wireguard/notify.env
+EnvironmentFile=/etc/kaskad/webui.env
+ExecStart=/usr/bin/python3 /usr/local/bin/ru-webui.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

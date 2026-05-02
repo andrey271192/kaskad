@@ -1,0 +1,28 @@
+# Sensitive: real tokens, keys, server data
+notify.env
+webui.env
+ru-servers.json
+ru-extra.list
+ru-base.aips
+ru-domains.json
+*_private.key
+*.key
+authorized_keys
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+# Backups
+*.bak
+*.bak.*

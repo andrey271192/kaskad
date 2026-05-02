@@ -1,0 +1,32 @@
+{
+  "servers": [
+    {
+      "id": "primary",
+      "host": "RU_PRIMARY_HOST_OR_IP",
+      "endpoint": "RU_PRIMARY_HOST_OR_IP:1939",
+      "pubkey": "BASE64_WG_PUBKEY_OF_PRIMARY",
+      "probe_port": 22,
+      "priority": 1,
+      "label": "primary.example.ru",
+      "ssh_user": "root",
+      "ssh_port": 22,
+      "wg_iface": "ens18"
+    },
+    {
+      "id": "backup",
+      "host": "RU_BACKUP_HOST_OR_IP",
+      "endpoint": "RU_BACKUP_HOST_OR_IP:1939",
+      "pubkey": "BASE64_WG_PUBKEY_OF_BACKUP",
+      "probe_port": 22,
+      "priority": 2,
+      "label": "backup.example.ru",
+      "ssh_user": "root",
+      "ssh_port": 22,
+      "wg_iface": "enp3s0"
+    }
+  ],
+  "ams_servers": [
+    {"id":"ams1","host":"AMS1_PUBLIC_IP","ssh_port":22,"tunnel_ip":"10.0.0.2","pubkey":"BASE64_WG_PUBKEY_AMS1","xray_iface":"amn0","is_local":true},
+    {"id":"ams2","host":"AMS2_PUBLIC_IP","ssh_port":22,"tunnel_ip":"10.0.0.3","pubkey":"BASE64_WG_PUBKEY_AMS2","xray_iface":"amn0"}
+  ]
+}
