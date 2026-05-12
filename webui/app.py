@@ -594,10 +594,18 @@ def api_change_password():
 
 @app.route("/api/logout")
 def api_logout():
-    """Возвращаем 401 с новым realm — браузер сбрасывает кеш Basic Auth."""
+    """401 + смена realm — подсказка браузеру забыть предыдущий Basic Auth.
+
+    Клиент должен дергать этот URL через XMLHttpRequest.open(..., user, password)
+    с заведомо неверной парой; иначе многие браузеры подставят сохранённые креды."""
     return Response(
-        "logged out", 401,
-        {"WWW-Authenticate": f'Basic realm="kaskad-logout-{os.urandom(4).hex()}"'},
+        "logged out\n",
+        401,
+        {
+            "WWW-Authenticate": f'Basic realm="kaskad-logout-{os.urandom(4).hex()}"',
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "Pragma": "no-cache",
+        },
     )
 
 

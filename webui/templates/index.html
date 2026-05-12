@@ -10,13 +10,13 @@
 <body x-data="kaskad()" x-init="load()">
   <header>
     <h1>Каскад</h1>
-    <button @click="load()" :disabled="loading">⟳ Обновить</button>
+    <button type="button" @click="load()" :disabled="loading">⟳ Обновить</button>
     <span class="status" x-show="loading">загружаю…</span>
     <span class="status err" x-show="error" x-text="error"></span>
     <div class="spacer"></div>
     <span class="muted" x-show="user" x-text="'👤 ' + user"></span>
-    <button @click="openSettings()" title="сменить пароль">🔑 Пароль</button>
-    <button class="danger" @click="logout()" title="выйти из WebUI">↪ Выход</button>
+    <button type="button" @click="openSettings()" title="сменить пароль">🔑 Пароль</button>
+    <button type="button" class="danger" @click.prevent="logout()" title="выйти из WebUI">↪ Выход</button>
   </header>
 
   <!-- Settings modal -->
@@ -282,18 +282,29 @@
           setTimeout(() => this.logout(), 1200);
         },
 
-        async logout() {
-          // 1) бьём бэк бракованными credentials — он отвечает 401 с новым realm,
-          //    браузер сбрасывает кешированный Basic Auth
+        logout() {
+          // HTTP Basic Auth живёт в браузере отдельно от cookies. fetch() с ручным
+          // Authorization часто ИГНОРИРУЕТСЯ — Chrome подставляет сохранённый пароль.
+          // XMLHttpRequest.open(..., user, password) заставляет уйти именно эта пара
+          // (заведомо ложная), сервер отвечает 401 + новый realm — после этого
+          // location.replace('/') обычно снова показывает окно входа.
+          const go = () => {
+            const u = new URL(window.location.href);
+            u.pathname = '/';
+            u.search = '_bye=' + Date.now();
+            u.hash = '';
+            window.location.replace(u.href);
+          };
+          const noise = () => Math.random().toString(36).slice(2) + Date.now();
           try {
-            await fetch('/api/logout', {
-              headers: { 'Authorization': 'Basic ' + btoa('logout:' + Math.random()) },
-              cache: 'no-store',
-              credentials: 'omit',
-            });
-          } catch {}
-          // 2) редиректим на корень с уникальным query — браузер заново спросит логин/пароль
-          window.location.href = '/?_=' + Date.now();
+            const xhr = new XMLHttpRequest();
+            xhr.timeout = 12000;
+            xhr.open('GET', '/api/logout?_=' + noise(), true, '__logout', noise());
+            xhr.onload = xhr.onerror = xhr.ontimeout = go;
+            xhr.send();
+          } catch (e) {
+            go();
+          }
         },
 
         fmtAge(s) {
