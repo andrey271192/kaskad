@@ -157,3 +157,43 @@ footer .foot-row {
 }
 footer .foot-row.muted { color: #6e7681; font-size: 11px; margin-top: 8px; }
 footer a { margin: 0 2px; }
+
+/* --- login --- */
+body.login-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 24px;
+}
+.login-box {
+  width: 100%;
+  max-width: 380px;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 28px;
+}
+.login-box h1 { margin: 0 0 8px 0; }
+.login-box form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 20px;
+}
+.login-box form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: #8b949e;
+}
+.login-box form input {
+  width: 100%;
+  box-sizing: border-box;
+}
+.login-box form button {
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px 16px;
+}

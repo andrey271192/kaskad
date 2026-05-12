@@ -246,9 +246,15 @@
           this.loading = true; this.error = '';
           try {
             const r = await fetch(url, {
-              method, headers: {'Content-Type':'application/json'},
+              method,
+              credentials: 'same-origin',
+              headers: {'Content-Type':'application/json'},
               body: body ? JSON.stringify(body) : undefined
             });
+            if (r.status === 401) {
+              window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname || '/');
+              throw new Error('требуется вход');
+            }
             const j = await r.json().catch(()=>({}));
             if (!r.ok) throw new Error(j.error || r.statusText);
             return j;
@@ -278,33 +284,15 @@
             });
           } catch { return; }
           this.settingsOpen = false;
-          this.flash('Пароль изменён. Сейчас браузер попросит новый.');
-          setTimeout(() => this.logout(), 1200);
+          this.flash('Пароль изменён');
+          this.forms.pwd = {current:'', new:'', confirm:''};
         },
 
-        logout() {
-          // HTTP Basic Auth живёт в браузере отдельно от cookies. fetch() с ручным
-          // Authorization часто ИГНОРИРУЕТСЯ — Chrome подставляет сохранённый пароль.
-          // XMLHttpRequest.open(..., user, password) заставляет уйти именно эта пара
-          // (заведомо ложная), сервер отвечает 401 + новый realm — после этого
-          // location.replace('/') обычно снова показывает окно входа.
-          const go = () => {
-            const u = new URL(window.location.href);
-            u.pathname = '/';
-            u.search = '_bye=' + Date.now();
-            u.hash = '';
-            window.location.replace(u.href);
-          };
-          const noise = () => Math.random().toString(36).slice(2) + Date.now();
+        async logout() {
           try {
-            const xhr = new XMLHttpRequest();
-            xhr.timeout = 12000;
-            xhr.open('GET', '/api/logout?_=' + noise(), true, '__logout', noise());
-            xhr.onload = xhr.onerror = xhr.ontimeout = go;
-            xhr.send();
-          } catch (e) {
-            go();
-          }
+            await fetch('/api/logout', { method: 'POST', credentials: 'same-origin' });
+          } catch {}
+          window.location.href = '/login';
         },
 
         fmtAge(s) {
