@@ -51,6 +51,17 @@ button:hover:not(:disabled) { background: #30363d; border-color: #58a6ff; color:
 button:disabled { opacity: 0.4; cursor: not-allowed; }
 button.danger { color: #f85149; border-color: #4a1f23; }
 button.danger:hover:not(:disabled) { background: #4a1f23; color: #fff; border-color: #f85149; }
+button.danger.solid {
+  background: #b1361a;
+  color: #fff;
+  border-color: #f85149;
+  font-weight: 600;
+}
+button.danger.solid:hover:not(:disabled) {
+  background: #f85149;
+  color: #fff;
+  border-color: #f85149;
+}
 button.sm { padding: 2px 8px; font-size: 11px; }
 
 .actions {

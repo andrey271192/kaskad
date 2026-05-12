@@ -1,30 +1,98 @@
 # Установка
 
-## Требования
+Есть два пути: **простой** (одна команда, всё автоматом) и **ручной** (если хочется контроля над каждым шагом).
 
-- Минимум 1 RU-сервер (Ubuntu 20.04+) с публичным IP или пробросом UDP/1939 на роутере
-- Минимум 1 ам. сервер (Ubuntu 20.04+) с установленной X-ray панелью (3x-ui)
-- Telegram-бот (создать в @BotFather) и chat ID для уведомлений (узнать у @userinfobot)
-- Root доступ на оба сервера
+---
 
-## Шаг 1. Первый RU-сервер
+## 🚀 Простой путь — одна команда
+
+### Что нужно заранее
+
+- **Один зарубежный сервер** (Ubuntu/Debian 20.04+, root) с настроенным X-ray (3x-ui подойдёт), интерфейс обычно `amn0`. Здесь будут жить WebUI и Telegram-бот.
+- **Один RU-сервер** (Ubuntu/Debian 20.04+, root, открыт UDP/1939 наружу или проброшен с роутера). Если он чистый — скрипт сам поставит на него WireGuard.
+- **Telegram-бот**: создайте через [@BotFather](https://t.me/BotFather), запишите token.
+- **Свой Telegram chat ID**: узнайте через [@userinfobot](https://t.me/userinfobot).
+
+### Запуск
+
+На зарубежном сервере, под root:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/andrey271192/kaskad/main/install.sh | sudo bash
+```
+
+Скрипт интерактивный, спросит 5–6 вопросов:
+
+| Вопрос | Что вводить |
+|---|---|
+| Telegram bot token | строка от @BotFather, типа `123456:AAH...` |
+| Telegram chat ID | число, например `123456789` |
+| Короткое имя ам. сервера | любое, `ams1` подойдёт |
+| Внешний IP | сам подтянет с `api.ipify.org` |
+| Хост RU-сервера | IP или домен RU-машины |
+| SSH-порт RU | обычно `22` |
+| Пароль root@RU | используется ОДИН раз, потом затирается |
+| Логин WebUI | например `admin` |
+| Пароль WebUI | минимум 8 символов |
+| Имя X-ray-интерфейса | обычно `amn0` |
+
+Через 2–3 минуты:
+
+```
+✓ Готово!
+
+  WebUI:    http://YOUR_AMS_IP:8088
+  Логин:    admin
+  Пароль:   (тот, что ты ввёл)
+
+  Telegram-бот активен — отправь ему /status.
+```
+
+Дальше всё через WebUI или бот.
+
+### Обновление
+
+```bash
+cd /opt/kaskad && git pull && sudo bash install.sh
+```
+
+Скрипт идемпотентный — повторный запуск ничего не сломает, просто обновит скрипты.
+
+### Удаление
+
+```bash
+sudo bash /opt/kaskad/uninstall.sh
+```
+
+Или одной командой:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/andrey271192/kaskad/main/uninstall.sh | sudo bash
+```
+
+Подтверждение через ввод `YES`. Если хотите снести и WG-ключи — `KASKAD_PURGE_KEYS=1 sudo bash uninstall.sh`.
+
+---
+
+## 🛠 Ручной путь — для тех, кто хочет понять каждый шаг
+
+Все шаги ниже делает за вас `install.sh` — приведены для отладки и образовательных целей.
+
+### Шаг 1. Первый RU-сервер
 
 На RU-сервере под root:
 
 ```bash
 apt update && apt install -y wireguard iptables-persistent
 
-# 1. Генерация ключа
 cd /etc/wireguard
 umask 077
 wg genkey | tee ru_private.key | wg pubkey > ru_public.key
 PRIVKEY=$(cat ru_private.key)
 
-# 2. ip_forward
 sysctl -w net.ipv4.ip_forward=1
 echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf
 
-# 3. Конфиг — пока без peer'ов, добавятся когда подключим первый ам.
 IFACE=$(ip route | awk '/^default/{print $5; exit}')
 cat > /etc/wireguard/wg_ru.conf <<EOF
 [Interface]
@@ -36,181 +104,144 @@ PostDown = iptables -t nat -D POSTROUTING -o $IFACE -j MASQUERADE; iptables -D F
 EOF
 chmod 600 /etc/wireguard/wg_ru.conf
 
-# 4. Открыть порт 1939/UDP
 iptables -A INPUT -p udp --dport 1939 -j ACCEPT
 netfilter-persistent save
 
-# 5. Запуск + автостарт
 wg-quick up wg_ru
 systemctl enable wg-quick@wg_ru
 
-# 6. Сохранить публичный ключ — пригодится
-cat ru_public.key
+cat ru_public.key  # запомните — понадобится
 ```
 
-Если RU за NAT (Keenetic и т.п.) — пробрось UDP/1939 на роутере на этот сервер.
+Если RU за NAT (Keenetic и т.п.) — пробросьте UDP/1939 на роутере на этот сервер.
 
-## Шаг 2. Первый ам. сервер
+### Шаг 2. Первый ам. сервер
 
 На ам. сервере под root:
 
 ```bash
-apt update && apt install -y wireguard iptables-persistent dnsutils
+apt update && apt install -y wireguard iptables-persistent dnsutils python3 python3-flask sshpass
 
-# 1. Ключ
 cd /etc/wireguard
 umask 077
 wg genkey | tee ru_private.key | wg pubkey > ru_public.key
-cat ru_public.key  # записать — добавим в peer'ы RU
+cat ru_public.key  # запомните — добавим в peer'ы RU
 
-# 2. Узнать имя интерфейса X-ray
+# Узнать имя интерфейса X-ray
 ip a | grep -E 'amn|tun' | grep -v '@'
-# обычно amn0 — используем дальше
+# обычно amn0
 
-# 3. Конфиг ru.conf — IP в туннеле = 10.0.0.2 (первый ам.)
 PRIVKEY=$(cat ru_private.key)
 cat > /etc/wireguard/ru.conf <<EOF
 [Interface]
 Address = 10.0.0.2/32
 PrivateKey = $PRIVKEY
 Table = off
-PostUp = ip route add 95.163.0.0/16 dev ru; ip route add 185.73.192.0/22 dev ru; ip route add 213.59.0.0/16 dev ru; ip route add 77.88.0.0/18 dev ru; ip route add 93.158.128.0/18 dev ru; ip route add 188.40.167.0/24 dev ru; ip route add 176.114.120.0/22 dev ru; ip route add 178.248.232.0/22 dev ru; ip route add 213.180.192.0/20 dev ru; ip route add 87.240.128.0/18 dev ru; ip rule add fwmark 100 table 200; ip route add default dev ru table 200; iptables -t nat -A POSTROUTING -o ru -j MASQUERADE
+PostUp = ip rule add fwmark 100 table 200; ip route add default dev ru table 200; iptables -t nat -A POSTROUTING -o ru -j MASQUERADE
 PostDown = ip rule del fwmark 100 table 200; ip route flush table 200; iptables -t nat -D POSTROUTING -o ru -j MASQUERADE
 [Peer]
-PublicKey = ПУБЛИЧНЫЙ_КЛЮЧ_RU_СЕРВЕРА
+PublicKey = ПУБЛИЧНЫЙ_КЛЮЧ_RU
 Endpoint = ВНЕШНИЙ_IP_RU:1939
-AllowedIPs = 10.0.0.0/24, 95.163.0.0/16, 185.73.192.0/22, 213.59.0.0/16, 77.88.0.0/18, 93.158.128.0/18, 188.40.167.0/24, 176.114.120.0/22, 178.248.232.0/22, 213.180.192.0/20, 87.240.128.0/18
+AllowedIPs = 10.0.0.0/24
 PersistentKeepalive = 25
 EOF
 chmod 600 /etc/wireguard/ru.conf
 
-# 4. Mangle для X-ray трафика — за каждой подсетью
-for net in 95.163.0.0/16 185.73.192.0/22 213.59.0.0/16 77.88.0.0/18 93.158.128.0/18 188.40.167.0/24 176.114.120.0/22 178.248.232.0/22 213.180.192.0/20 87.240.128.0/18; do
-  iptables -t mangle -A PREROUTING -i amn0 -d $net -j MARK --set-mark 100
-done
+# mangle для X-ray трафика
+iptables -t mangle -A PREROUTING -i amn0 -j MARK --set-mark 100
 netfilter-persistent save
 
-# 5. Запуск
 wg-quick up ru
 systemctl enable wg-quick@ru
 wg show ru  # должен быть handshake
 ```
 
-На RU-сервере добавить этот ам. как peer:
+На RU-сервере добавьте этот ам. как peer:
+
 ```bash
-wg set wg_ru peer ПУБЛИЧНЫЙ_КЛЮЧ_АМ allowed-ips 10.0.0.2/32
 cat >> /etc/wireguard/wg_ru.conf <<EOF
 
 [Peer]
 PublicKey = ПУБЛИЧНЫЙ_КЛЮЧ_АМ
 AllowedIPs = 10.0.0.2/32
 EOF
+wg set wg_ru peer ПУБЛИЧНЫЙ_КЛЮЧ_АМ allowed-ips 10.0.0.2/32
 ```
 
-Проверить что трафик идёт:
+Проверьте на ам.:
+
 ```bash
-# на ам. сервере
 curl --interface ru https://gosuslugi.ru -I
 # должен ответить HTTP/... 200
 ```
 
-## Шаг 3. Установка скриптов и бота
-
-На ам. сервере где будет жить бот (в Амстердаме, Telegram должен быть доступен!):
+### Шаг 3. Скрипты, бот, WebUI
 
 ```bash
 git clone https://github.com/andrey271192/kaskad.git /opt/kaskad
 cd /opt/kaskad
 
-# 1. Скопировать скрипты
 install -m 755 bin/ru-failover.py    /usr/local/bin/
 install -m 755 bin/ru-set.sh         /usr/local/bin/
 install -m 755 bin/ru-routes.sh      /usr/local/bin/
 install -m 755 bin/ru-domains.py     /usr/local/bin/
 install -m 755 bin/add-ru-helper.sh  /usr/local/bin/
 install -m 755 bin/add-ams-helper.sh /usr/local/bin/
+install -m 755 bot/ru-tg-bot.py      /usr/local/bin/
 
-# 2. Создать notify.env
 cp examples/notify.env.example /etc/wireguard/notify.env
 chmod 600 /etc/wireguard/notify.env
-# ВПИСАТЬ TG_BOT_TOKEN и TG_CHAT_ID
+# впишите TG_BOT_TOKEN и TG_CHAT_ID
 
-# 3. Создать ru-servers.json
 cp examples/ru-servers.example.json /etc/wireguard/ru-servers.json
 chmod 600 /etc/wireguard/ru-servers.json
-# ОТРЕДАКТИРОВАТЬ — вписать host, pubkey, ssh_user/port для каждого RU; для каждого ам. — host, pubkey, tunnel_ip
+# отредактируйте — host, pubkey, ssh_port для RU; host, pubkey, tunnel_ip для ам.
 
-# 4. Базовый список allowed-ips (берётся из ru.conf при первом apply)
-# создаст ru-base.aips автоматически
-/usr/local/bin/ru-routes.sh apply
+mkdir -p /etc/kaskad
+cp webui/webui.env.example /etc/kaskad/webui.env
+chmod 600 /etc/kaskad/webui.env
+# впишите KASKAD_WEB_USER и KASKAD_WEB_PASS
 
-# 5. Cron на failover и refresh доменов
+install -m 644 bot/ru-tg-bot.service     /etc/systemd/system/
+install -m 644 webui/ru-webui.service    /etc/systemd/system/
+# отредактируйте WorkingDirectory и ExecStart в ru-webui.service → /opt/kaskad/webui
+
+# cron
 ( crontab -l 2>/dev/null; \
   echo '* * * * * /usr/local/bin/ru-failover.py'; \
   echo '17 */6 * * * /usr/local/bin/ru-domains.py refresh >> /var/log/ru-domains.log 2>&1' \
 ) | crontab -
 
-# 6. SSH-ключ бота (нужен для управления остальными серверами через ssh-key auth)
+# SSH-ключ для бота
 [ -f /root/.ssh/id_ed25519 ] || ssh-keygen -t ed25519 -N '' -f /root/.ssh/id_ed25519
 cat /root/.ssh/id_ed25519.pub
-# скопировать в /root/.ssh/authorized_keys на всех остальных ам. серверах
-# и на всех RU-серверах
+# добавьте в /root/.ssh/authorized_keys на остальных ам. и RU серверах
 
-# 7. Установить бот
-install -m 755 bot/ru-tg-bot.py /usr/local/bin/
-install -m 644 bot/ru-tg-bot.service /etc/systemd/system/
-apt install -y python3 sshpass
 systemctl daemon-reload
-systemctl enable --now ru-tg-bot.service
-journalctl -u ru-tg-bot.service -f
-```
+systemctl enable --now ru-tg-bot.service ru-webui.service
 
-Послать боту в Telegram `/status` — должно прийти текущее состояние.
-
-## Шаг 4. Веб-интерфейс (опционально)
-
-На том же ам. сервере, где бот:
-
-```bash
-cd /opt/kaskad
-apt install -y python3-flask
-
-install -m 755 webui/app.py /usr/local/bin/ru-webui.py
-mkdir -p /usr/local/share/kaskad
-cp -r webui/templates webui/static /usr/local/share/kaskad/
-# в app.py указать template_folder и static_folder если нужно;
-# по умолчанию работает из текущей директории, поэтому проще:
-ln -s /usr/local/share/kaskad/templates /usr/local/bin/templates
-ln -s /usr/local/share/kaskad/static /usr/local/bin/static
-
-mkdir -p /etc/kaskad
-cp webui/webui.env.example /etc/kaskad/webui.env
-chmod 600 /etc/kaskad/webui.env
-# ВПИСАТЬ KASKAD_WEB_USER и KASKAD_WEB_PASS
-
-install -m 644 webui/ru-webui.service /etc/systemd/system/
-systemctl daemon-reload
-systemctl enable --now ru-webui.service
-
-# Открыть порт 8088 (по желанию)
-iptables -I INPUT -p tcp --dport 8088 -j ACCEPT
+# открываем 8088
+iptables -A INPUT -p tcp --dport 8088 -j ACCEPT
 netfilter-persistent save
-
-# Открыть в браузере: http://AMS-IP:8088
 ```
 
-Рекомендуется поставить за HTTPS reverse-proxy (nginx, caddy, traefik) с Let's Encrypt.
+Проверьте: `journalctl -u ru-tg-bot -u ru-webui -f`. Отправьте боту `/status` — должен ответить. Откройте `http://AMS_IP:8088`.
 
-## Шаг 5. Дальше
+---
 
-Через бот или WebUI:
-- `/server-add` — добавить новый RU-сервер
-- `/ams-add` — добавить новый ам. сервер
-- `/add-domain vk.com ozon.ru` — добавить русские сайты по доменам
-- `/add 5.45.192.1/32` — добавить конкретные IP/CIDR
+## Дальнейшее расширение
 
-Failover-скрипт каждую минуту проверяет здоровье текущего peer'а и переключает при необходимости.
+После того как первая пара RU + ам. работает — добавлять новые **через WebUI или бот**, ничего больше не надо настраивать вручную.
+
+- **+RU-сервер** → в WebUI «+ добавить RU-сервер» (нужен root-пароль для первичной онбординги) или `/server-add` в боте
+- **+ам. сервер** → «+ добавить ам. сервер» или `/ams-add`
+- **+домен** (vk.com, ozon.ru) → секция «Домены» или `/add-domain vk.com ozon.ru`
+- **+IP/CIDR** → секция «Доп. IP/CIDR» или `/add 5.45.192.1/32`
+
+Cron каждую минуту проверяет здоровье текущего RU peer'а через handshake age + TCP-пробу и переключает на следующий по приоритету при необходимости.
+
+---
 
 ## Если что-то не работает
 
-См. [docs/troubleshooting.md](troubleshooting.md).
+См. [troubleshooting.md](troubleshooting.md).

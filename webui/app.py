@@ -395,37 +395,58 @@ systemctl enable wg-quick@ru 2>&1 | tail -1
 @app.route("/api/ams/<sid>", methods=["DELETE"])
 @require_auth
 def api_ams_remove(sid):
-    data = load_data()
-    target = next((a for a in data.get("ams_servers", []) if a["id"] == sid or a["host"] == sid), None)
-    if not target: return jsonify(error="не найден"), 404
-    if target.get("is_local"): return jsonify(error="нельзя удалить local"), 400
+    """Удалить зарубежный (ам.) сервер из каскада.
 
+    Шаги:
+      1) на каждом RU-сервере убрать [Peer] с pubkey удаляемого ам.
+      2) обновить /etc/wireguard/ru-servers.json и разлить по остальным ам.
+      3) синхронизировать живой wg-интерфейс на RU через `wg set ... peer ... remove`
+
+    ?force=1 — продолжить, даже если какой-то RU недоступен.
+    """
+    force = request.args.get("force") in ("1", "true", "yes")
+    data = load_data()
+    target = next((a for a in data.get("ams_servers", [])
+                   if a["id"] == sid or a["host"] == sid), None)
+    if not target:
+        return jsonify(error=f"ам. сервер '{sid}' не найден"), 404
+    if target.get("is_local"):
+        return jsonify(error="нельзя удалить сервер, на котором запущен WebUI"), 400
+
+    pubkey = target["pubkey"]
     rus = ru_list_data()
-    peer_results = []
+    peer_results, hard_fail = [], []
+
     for ru in rus:
-        cmd = f"""
-python3 - <<'PY'
-import pathlib, re
-p = pathlib.Path('/etc/wireguard/wg_ru.conf')
-t = p.read_text()
-parts = re.split(r'(\\[Peer\\])', t)
-result = parts[0]
-i = 1
-while i < len(parts):
-    block = parts[i] + (parts[i+1] if i+1 < len(parts) else '')
-    if {target['pubkey']!r} in block:
-        i += 2; continue
-    result += block
-    i += 2
-p.write_text(result)
-PY
-wg syncconf wg_ru <(wg-quick strip wg_ru) 2>&1
-"""
+        cmd = (
+            f"set -e; cd /etc/wireguard; "
+            f"cp -a wg_ru.conf wg_ru.conf.bak.$(date +%s); "
+            f"python3 -c \"import pathlib,re,sys; "
+            f"p=pathlib.Path('wg_ru.conf'); t=p.read_text(); "
+            f"blocks=re.split(r'(?m)(?=^\\[Peer\\])', t); "
+            f"kept=[b for b in blocks if {pubkey!r} not in b]; "
+            f"p.write_text(''.join(kept))\"; "
+            f"wg set wg_ru peer {shlex.quote(pubkey)} remove 2>/dev/null || true; "
+            f"echo OK"
+        )
         out_pr, rc_pr = ssh_ru(ru, cmd, timeout=20)
-        peer_results.append({"ru": ru["id"], "ok": rc_pr == 0})
+        ok = (rc_pr == 0 and "OK" in (out_pr or ""))
+        peer_results.append({"ru": ru["id"], "ok": ok, "msg": (out_pr or "")[-200:]})
+        if not ok:
+            hard_fail.append(f"{ru['id']}: rc={rc_pr} {(out_pr or '')[-120:]}")
+
+    if hard_fail and not force:
+        return jsonify(
+            error=("не удалось убрать peer на: " + "; ".join(hard_fail) +
+                   ". Повторите с ?force=1 чтобы удалить запись принудительно."),
+            peers=peer_results,
+        ), 502
+
     data["ams_servers"] = [a for a in data["ams_servers"] if a["id"] != target["id"]]
-    save_and_distribute(data)
-    return jsonify(removed=target["id"], peers=peer_results)
+    ok, err = save_and_distribute(data)
+    if not ok and not force:
+        return jsonify(error=f"sync конфига: {err}", peers=peer_results), 500
+    return jsonify(removed=target["id"], peers=peer_results, force=force)
 
 
 @app.route("/api/domains", methods=["POST"])

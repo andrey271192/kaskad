@@ -79,18 +79,25 @@
 
   <!-- Ам. серверы -->
   <section>
-    <h2>Ам. серверы</h2>
+    <h2>Ам. серверы (зарубежные)</h2>
     <table>
       <thead><tr><th>ID</th><th>Host</th><th>SSH</th><th>Tunnel</th><th>Pubkey</th><th></th></tr></thead>
       <tbody>
         <template x-for="a in state.ams_servers" :key="a.id">
           <tr>
-            <td><strong x-text="a.id"></strong> <span class="muted" x-show="a.is_local">(local)</span></td>
+            <td><strong x-text="a.id"></strong> <span class="muted" x-show="a.is_local">(этот сервер)</span></td>
             <td x-text="a.host"></td>
             <td x-text="a.ssh_port"></td>
             <td x-text="a.tunnel_ip"></td>
             <td class="muted mono" x-text="a.pubkey.slice(0, 20) + '...'"></td>
-            <td><button class="danger" @click="removeAms(a.id)" :disabled="a.is_local">удалить</button></td>
+            <td>
+              <template x-if="!a.is_local">
+                <button class="danger solid" @click="removeAms(a.id)">удалить</button>
+              </template>
+              <template x-if="a.is_local">
+                <span class="muted" title="нельзя удалить сервер, на котором запущен WebUI/бот">⛔ нельзя</span>
+              </template>
+            </td>
           </tr>
         </template>
       </tbody>
@@ -258,8 +265,18 @@
           this.load();
         },
         async removeAms(id) {
-          if (!confirm(`Удалить ам. '${id}'? Snimet peer на всех RU.`)) return;
-          await this.req('DELETE',`/api/ams/${id}`); this.flash('удалено'); this.load();
+          if (!confirm(`Удалить зарубежный сервер '${id}'?\n\nЧто произойдёт:\n  • peer уберётся со всех RU-серверов\n  • запись удалится из конфига\n  • сам сервер ${id} останется жив, но больше не будет частью каскада\n\nПродолжить?`)) return;
+          try {
+            const r = await this.req('DELETE',`/api/ams/${id}`);
+            const peers = (r.peers||[]).map(p => `${p.ru}: ${p.ok?'✓':'✗'}`).join(', ');
+            this.flash(`удалён ${id}${peers ? ' ('+peers+')' : ''}`);
+          } catch (e) {
+            if (confirm(`Ошибка: ${e.message}\n\nУдалить запись принудительно (force, даже если RU-серверы недоступны)?`)) {
+              await this.req('DELETE',`/api/ams/${id}?force=1`);
+              this.flash(`удалён ${id} (force)`);
+            }
+          }
+          this.load();
         },
         async addDomains() {
           const doms = this.forms.domains.split(/[\s,]+/).map(s=>s.trim()).filter(Boolean);
