@@ -11,6 +11,7 @@ from pathlib import Path
 from flask import Flask, jsonify, render_template, request, Response
 
 SERVERS_JSON = Path(os.environ.get("KASKAD_SERVERS_JSON", "/etc/wireguard/ru-servers.json"))
+WEBUI_ENV    = Path(os.environ.get("KASKAD_WEBUI_ENV",  "/etc/kaskad/webui.env"))
 LOCAL_HOST = os.environ.get("LOCAL_HOST", "ams1")
 LOCAL_IP = os.environ.get("LOCAL_IP", "127.0.0.1")
 BOT_KEY = os.environ.get("KASKAD_SSH_KEY", "/root/.ssh/id_ed25519")
@@ -543,6 +544,61 @@ def api_ips_clear():
         out, rc = ssh_ams(a, "/usr/local/bin/ru-routes.sh clear", timeout=20)
         results.append({"ams": a["id"], "ok": rc == 0, "msg": out})
     return jsonify(results=results)
+
+
+@app.route("/api/auth/whoami")
+@require_auth
+def api_whoami():
+    return jsonify(user=WEB_USER)
+
+
+@app.route("/api/auth/password", methods=["POST"])
+@require_auth
+def api_change_password():
+    """Сменить пароль администратора.
+
+    Перезаписывает строку KASKAD_WEB_PASS=... в /etc/kaskad/webui.env и
+    обновляет переменную в памяти процесса, чтобы НЕ требовался рестарт.
+    """
+    global WEB_PASS
+    body = request.json or {}
+    current = (body.get("current") or "").strip()
+    new = (body.get("new") or "").strip()
+    if not new or len(new) < 8:
+        return jsonify(error="новый пароль должен быть не короче 8 символов"), 400
+    if current != WEB_PASS:
+        return jsonify(error="текущий пароль неверный"), 403
+    if new == current:
+        return jsonify(error="новый пароль совпадает со старым"), 400
+    if not WEBUI_ENV.exists():
+        return jsonify(error=f"нет файла {WEBUI_ENV} — сменить пароль вручную невозможно"), 500
+
+    try:
+        lines = WEBUI_ENV.read_text().splitlines()
+        found = False
+        for i, line in enumerate(lines):
+            if line.startswith("KASKAD_WEB_PASS="):
+                lines[i] = f"KASKAD_WEB_PASS={new}"
+                found = True
+                break
+        if not found:
+            lines.append(f"KASKAD_WEB_PASS={new}")
+        WEBUI_ENV.write_text("\n".join(lines) + "\n")
+        WEBUI_ENV.chmod(0o600)
+    except Exception as e:
+        return jsonify(error=f"запись {WEBUI_ENV}: {e}"), 500
+
+    WEB_PASS = new
+    return jsonify(ok=True)
+
+
+@app.route("/api/logout")
+def api_logout():
+    """Возвращаем 401 с новым realm — браузер сбрасывает кеш Basic Auth."""
+    return Response(
+        "logged out", 401,
+        {"WWW-Authenticate": f'Basic realm="kaskad-logout-{os.urandom(4).hex()}"'},
+    )
 
 
 @app.route("/")

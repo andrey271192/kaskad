@@ -13,7 +13,36 @@
     <button @click="load()" :disabled="loading">⟳ Обновить</button>
     <span class="status" x-show="loading">загружаю…</span>
     <span class="status err" x-show="error" x-text="error"></span>
+    <div class="spacer"></div>
+    <span class="muted" x-show="user" x-text="'👤 ' + user"></span>
+    <button @click="openSettings()" title="сменить пароль">🔑 Пароль</button>
+    <button class="danger" @click="logout()" title="выйти из WebUI">↪ Выход</button>
   </header>
+
+  <!-- Settings modal -->
+  <div class="modal" x-show="settingsOpen" x-cloak @click.self="settingsOpen=false">
+    <div class="modal-body">
+      <h2>Сменить пароль администратора</h2>
+      <form @submit.prevent="changePassword()">
+        <label>Текущий пароль
+          <input type="password" x-model="forms.pwd.current" required autocomplete="current-password">
+        </label>
+        <label>Новый пароль (≥ 8 символов)
+          <input type="password" x-model="forms.pwd.new" required minlength="8" autocomplete="new-password">
+        </label>
+        <label>Повторите новый пароль
+          <input type="password" x-model="forms.pwd.confirm" required minlength="8" autocomplete="new-password">
+        </label>
+        <div class="modal-actions">
+          <button type="button" @click="settingsOpen=false">отмена</button>
+          <button type="submit" class="danger solid" :disabled="loading">сохранить</button>
+        </div>
+      </form>
+      <p class="muted" style="margin-top:12px">
+        После смены пароля браузер автоматически попросит ввести новый — это нормально.
+      </p>
+    </div>
+  </div>
 
   <!-- Status: ам. серверы и куда ходят -->
   <section>
@@ -203,11 +232,14 @@
       return {
         state: {ru_servers:[], ams_servers:[], status:[], extra_ips:[], base_ips:[], domains:{}},
         loading: false, error: '', toast: '',
+        user: '',
+        settingsOpen: false,
         domainFilter: '', ipFilter: '',
         forms: {
           ru: {user:'root', ssh_port:22, listen_port:1939, priority:3},
           ams: {user:'root', ssh_port:22, xray_iface:'amn0'},
           domains: '', ips: '',
+          pwd: {current:'', new:'', confirm:''},
         },
 
         async req(method, url, body) {
@@ -224,7 +256,45 @@
           finally { this.loading = false; }
         },
         flash(msg) { this.toast = msg; setTimeout(()=>this.toast='', 3500); },
-        async load() { try { this.state = await this.req('GET','/api/state'); } catch{} },
+        async load() {
+          try { this.state = await this.req('GET','/api/state'); } catch{}
+          try { const w = await this.req('GET','/api/auth/whoami'); this.user = w.user || ''; } catch{}
+        },
+
+        openSettings() {
+          this.forms.pwd = {current:'', new:'', confirm:''};
+          this.settingsOpen = true;
+        },
+
+        async changePassword() {
+          if (this.forms.pwd.new !== this.forms.pwd.confirm) {
+            this.error = 'новый пароль и подтверждение не совпадают';
+            return;
+          }
+          try {
+            await this.req('POST','/api/auth/password', {
+              current: this.forms.pwd.current,
+              new: this.forms.pwd.new,
+            });
+          } catch { return; }
+          this.settingsOpen = false;
+          this.flash('Пароль изменён. Сейчас браузер попросит новый.');
+          setTimeout(() => this.logout(), 1200);
+        },
+
+        async logout() {
+          // 1) бьём бэк бракованными credentials — он отвечает 401 с новым realm,
+          //    браузер сбрасывает кешированный Basic Auth
+          try {
+            await fetch('/api/logout', {
+              headers: { 'Authorization': 'Basic ' + btoa('logout:' + Math.random()) },
+              cache: 'no-store',
+              credentials: 'omit',
+            });
+          } catch {}
+          // 2) редиректим на корень с уникальным query — браузер заново спросит логин/пароль
+          window.location.href = '/?_=' + Date.now();
+        },
 
         fmtAge(s) {
           if (s == null) return '—';
