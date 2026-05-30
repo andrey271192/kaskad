@@ -194,7 +194,7 @@ kaskad/
 - ⭐ Поставьте звезду на [andrey271192/kaskad](https://github.com/andrey271192/kaskad)
 - 💖 [Boosty](https://boosty.to/andrey27/donate)
 - 💳 [Ozon Bank СБП](https://finance.ozon.ru/apps/sbp/ozonbankpay/019dc200-2a5d-7931-a619-782d285f6798)
-- ✉️ Telegram: [@Iot_andrey](https://t.me/Iot_andrey) — вопросы, баги, идеи
+- ✉️ Telegram: [@PCAdministration](https://t.me/PCAdministration) — вопросы, баги, идеи
 
 ## Лицензия
 
